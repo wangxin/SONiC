@@ -1,16 +1,48 @@
 - [Overview](#overview)
-    - [Scope](#scope)
-    - [Related **DUT** CLI commands](#related-dut-cli-commands)
-- [Setup configuration](#setup-configuration)
-    - [Scripts for generating configuration on SONIC](#scripts-for-generating-configuration-on-SONIC)
+  - [Scope](#scope)
+  - [Summary of the existing everflow test plan](#summary-of-the-existing-everflow-test-plan)
+  - [Extend the test plan to cover both ingress and egress ACL](#extend-the-test-plan-to-cover-both-ingress-and-egress-acl)
+  - [Related **DUT** CLI commands](#related-dut-cli-commands)
+    - [sonic-cfggen](#sonic-cfggen)
+    - [acl-loader](#acl-loader)
+    - [aclshow](#aclshow)
+    - [config mirror_session](#config-mirror_session)
+- [Test structure](#test-structure)
+  - [Overall structure](#overall-structure)
+  - [Setup configuration](#setup-configuration)
+    - [Scripts for generating configuration on SONIC](#scripts-for-generating-configuration-on-sonic)
     - [Ansible scripts to setup and run test](#ansible-scripts-to-setup-and-run-test)
-        - [everflow_testbed.yml](#everflow-testbed-yml)
-    - [Setup of DUT switch](#Setup-of-DUT-switch)
-        - [J2 templates](#j2-templates)
+      - [everflow_testbed.yml](#everflow_testbedyml)
+    - [Setup of DUT switch](#setup-of-dut-switch)
 - [PTF Test](#ptf-test)
-    - [Input files for PTF test](#input-files-for-ptf-test)
-    - [Traffic validation in PTF](#traffic-validation-in-ptf)
+  - [Input files for PTF test](#input-files-for-ptf-test)
+  - [Traffic validation in PTF](#traffic-validation-in-ptf)
 - [Test cases](#test-cases)
+  - [Test case \#1 - Resolved route](#test-case-1---resolved-route)
+    - [Test objective](#test-objective)
+    - [Test steps](#test-steps)
+  - [Test case \#2 - Longer prefix route with resolved next hop](#test-case-2---longer-prefix-route-with-resolved-next-hop)
+    - [Test objective](#test-objective-1)
+    - [Test steps](#test-steps-1)
+  - [Test case \#3 - Remove longer prefix route.](#test-case-3---remove-longer-prefix-route)
+    - [Test objective](#test-objective-2)
+    - [Test steps](#test-steps-2)
+  - [Test case \#4 - Change neighbor MAC address.](#test-case-4---change-neighbor-mac-address)
+    - [Test objective](#test-objective-3)
+    - [Test steps](#test-steps-3)
+  - [Test case \#5 - Resolved ECMP route.](#test-case-5---resolved-ecmp-route)
+    - [Test objective](#test-objective-4)
+    - [Test steps](#test-steps-4)
+  - [Test case \#6 - ECMP route change (add next hop).](#test-case-6---ecmp-route-change-add-next-hop)
+    - [Test objective](#test-objective-5)
+    - [Test steps](#test-steps-5)
+  - [Test case \#7 - ECMP route change (remove next hop used by session).](#test-case-7---ecmp-route-change-remove-next-hop-used-by-session)
+    - [Test objective](#test-objective-6)
+    - [Test steps](#test-steps-6)
+  - [Test case \#8 - ECMP route change (remove next hop not used by session).](#test-case-8---ecmp-route-change-remove-next-hop-not-used-by-session)
+    - [Test objective](#test-objective-7)
+    - [Test steps](#test-steps-7)
+  - [Other possible tests](#other-possible-tests)
 - [TODO](#todo)
 - [Open Questions](#open-questions)
 
@@ -24,19 +56,90 @@ The purpose of the test is not to test specific SAI API, but functional testing 
 
 NOTE: Everflow+LAG test will be able to run **only** in the testbed specifically created for LAG.
 
-### Related **DUT** CLI commands
-Manual Everflow configuration can be done using swssconfig utility in swss container.
+### Summary of the existing everflow test plan
 
-    swssconfig <json-file to apply>
+The existing everflow test plan only covers ingress ACL. And ingress everflow ACL table is binded to all ports. ACL rules are added to that ACL table. Then the PTF container is used for injecting packets. Two packets directions are tested: SPINE -> TOR ports and TOR -> SPINE ports. When the injected packets hit any of the configured ACL rules, the packets will be mirrored to configured mirror session. GRE tunnel is used for sending mirrored packets with src, dst IP and other parmeters configured in the mirror session. Below test cases are used for verifying that the DUT switch can properly forwared the mirrored packets according to different routing configurations for mirror session destination.
+
+* testcase 1 - Resolved route
+* testcase 2 - Longer prefix route with resolved next hop
+* testcase 3 - Remove longer prefix route
+* testcase 4 - Change neighbor MAC address
+* testcase 5 - Resolved ECMP route
+* testcase 6 - ECMP route change (add next hop)
+* testcase 7 - ECMP route change (remove next hop used by session)
+* testcase 8 - ECMP route change (remove next hop not used by session)
+
+### Extend the test plan to cover both ingress and egress ACL
+
+After egress ACL is supported, this test plan needs to cover both ingress and egress ACL. But for supporting swiches that do not support ingress yet, an ansible playbook variable is required for indicating egress ACL capability. Value for the variable can be passed from CLI.
+
+To cover egress ACL everflow testing, the ACL tables should not be binded to all ports. And different ACL tables for ingress and egress ACL need to be tested. Based on this requirement, totally 4 ACL tables should be configured before testing:
+
+ACL Table | Type | Bind to | Stage | Packet flow | Description
+----------|------|---------|-------|-------------|------------
+TORIN | MIRROR | TOR ports | Ingress | TOR -> SPINE | Ingress ACL, packets injected into TOR ports, hit ACL, mirrored to mirror session destination
+SPINEIN | MIRROR | SPINE ports | Ingress | SPINE -> TOR | Ingress ACL, packets injected into SPINE ports, hit ACL, mirrored to mirror session destination
+TOROUT | MIRROR | TOR ports | Egress | SPINE -> TOR | Egress ACL, packets injected into SPINE ports, forwarded to TOR ports, hit ACL, mirrored to mirror session destination
+SPINEOUT | MIRROR | SPINE ports | Egress | TOR -> SPINE | Egress ACL, packets injected into TOR ports, forwarded to SPINE ports, hit ACL, mirrored to mirror session destination
+
+For switches do not support egress ACL, only the first two ACL tables will be configured for testing.
+
+### Related **DUT** CLI commands
+
+The existing test plan uses a script calling swsssdk to configure mirror session. Calling SDK to configure DUT switch is not user friendly. Now DUT switch supports configuring mirror session using CLI command `config mirror_session`.
+
+Summary of the CLI commands that will be used for configuring DUT.
+
+#### sonic-cfggen
+
+It is for configuring ACL tables reading current ACL configuration. For example:
+```
+# sonic-cfggen -j <configuration_json_file> --write-to-db
+# sonic-cfggen -d -v ACL_TABLE
+# sonic-cfggen -d -v ACL_RULE
+```
+
+#### acl-loader
+ 
+This tool is for configuring ACL rules. For example:
+```
+# acl-loader update full <acl_rule_configuration_json_file>
+```
+
+#### aclshow
+This tool is for collecting ACL rule couters. For examle:
+```
+# aclshow -a
+```
+
+#### config mirror_session
+This tool is for configuring everflow mirror session. For example:
+```
+# config mirror_session add <session_name> <src_ip> <dst_ip> <dscp> <ttl> [gre_type] [queue]
+```
 
 ## Test structure 
+
+### Overall structure
+
+The ansible test playbook will have 3 parts:
+1. Add everflow configuration
+2. Run everflow testing
+3. Clear everflow configuration
+
+Everflow test consists of a number of test cases, and each of them will include the following steps:
+
+1. Run lognanalyzer 'init' phase
+2. Run Everflow test case
+3. Run loganalyzer 'analyze' phase
+
 ### Setup configuration
-Everflow configuration should be created on the DUT before running the test. Configuration could be deployed using ansible sonic test playbook with the tag **everflow_tb**.
-Egress ACL rules were added later. Not all DUT switches supports it. Depends on DUT switch's capability, everflow will be configured with ingress ACL rules, egress ACL rules or both.
+
+Everflow configuration should be created using ansible playbook on the DUT before running the test.
 
 #### Scripts for generating configuration on SONIC
 
-There will be three j2 template files for the Everflow test configuration: everflow_tb_test_session.j2, everflow_tb_test_acl_table.j2 and everflow_tb_test_acl_rule.j2. They will be used by Ansible playbook to generate json files and apply them on the switch.
+There will be j2 template files for generating ACL tables and ACL rules configurations. Ansible playbook will generate ACL tables and ACL rules json configuration files to DUT based on these templates, switch capability and running topology. Then use `sonic-cfggen` and `acl-loader` CLI commands to load the configurations.
 
 When ingress ACL rules are used, they should be associated with ACL table which only binded to ports that the PTF packets will be injected into. Similarly, when egress ACL rules are used, they should be associated with ACL table which only binded to egress ports of the injected PTF packets.
 
@@ -44,17 +147,17 @@ When ingress ACL rules are used, they should be associated with ACL table which 
 
 ##### everflow_testbed.yml
 
-everflow_testbed.yml when run with tag "everflow_tb" will to the following:
+When run test_sonic.yml with testcase_name=everflow_testbed, the everflow_testbed.yml script will run and do the following:
 
 1. Generate JSON files and apply them on the switch.
 2. Run test.
 3. Clean up dynamic configuration and temporary configuration on the DUT.
 
 Different sets of JSON file will be generated for different test scenarios:
-1. Ingress ACL, inject packets into TOR ports, check mirrored packets on SPINE ports
-2. Ingress ACL, inject packets into SPINE ports, check mirrored packets on TOR ports
-3. Egress ACL, inject packets into TOR ports, check mirrored packets on SPINE ports
-4. Egress ACL, inject packets into SPINE ports, check mirrored packets on TOR ports
+1. Ingress ACL on TOR ports, inject packets into TOR ports. Packets hit ACL, then mirrored to mirror session destination
+2. Ingress ACL on SPINE ports, inject packets into SPINE ports. Packets hit ACL, then mirrored to mirror session destination
+3. Egress ACL on TOR ports, inject packets into SPINE ports. Packets forwarded to TOR ports, hit ACL, then mirrored to mirror session destination
+4. Egress ACL on SPINE ports, inject packets into TOR ports. Packets forwarded to SPINE ports, hit ACL, then mirrored to mirror session destination
 
 Everflow test consists of a number of subtests, and each of them will include the following steps:
 
@@ -65,166 +168,248 @@ Everflow test consists of a number of subtests, and each of them will include th
 Everflow subtests will be implemented in the PTF (everflow_tb_test.py). Every subtest will be implemented in a separate class.
 
 #### Setup of DUT switch
-Setup of SONIC DUT will be done by Ansible script. During setup Ansible will copy JSON file containing configuration for Everflow to the swss container on the DUT. swssconfig utility will be used to push configuration to the SONiC DB. Data will be consumed by orchagent.
+Setup of SONIC DUT will be done by Ansible script. During setup Ansible playbook will generate ACL tables and ACL rules json configuration files to DUT based on these templates, switch capability and running topology. Then use `sonic-cfggen` and `acl-loader` CLI commands to load the configurations. Mirror session can be configured using `config mirror_session`.
 
-JSON Sample:
+Add mirror_session:
+```
+# config mirror_session add session_1 1.1.1.1 2.2.2.2 8 64 0x6558 0
+# acl-loader show session
+Name       Status    SRC IP     DST IP    GRE     DSCP    TTL    Queue
+---------  --------  ---------  --------  ------  ------  -----  -------
+session_1  inactive  1.1.1.1    2.2.2.2   0x6558  8       64     0
+```
 
-everflow_session.json
-```
-[
-    {
-        "MIRROR_SESSION_TABLE:session_1": {
-            "src_ip": "1.1.1.1",
-            "dst_ip": "2.2.2.2",
-            "gre_type": "0x6558",
-            "dscp": "8",
-            "ttl": "64",
-            "queue": "0"
-        },
-        "OP": "SET"
-    }
-]
-```
+Sample json configuration files for adding ACL tables. Use CLI `sonic-cfggen -j <acl_table_configuration_filename> --write-to-db` to load the configurations.
 
 everfow_acl_table.json, ingress, tor->spine
 ```
-[
-    {
-        "ACL_TABLE:acl_table_mirror_ingress_torin": {
-            "policy_desc" : "Everflow_ACL_table, Ingress, TOR in",
-            "type" : "MIRROR",
-            "ports" : "Ethernet64, Ethernet68, Ethernet72, Ethernet76, Ethernet80, Ethernet84, Ethernet88, Ethernet92, Ethernet96, Ethernet100, Ethernet104, Ethernet108, Ethernet112, Ethernet116, Ethernet120, Ethernet124, Ethernet128"
-        },
-        "OP": "SET"
+{
+    "ACL_TABLE": {
+        "TORIN": {
+            "policy_desc": "TOR ports ingress", 
+            "ports": [
+                "Ethernet64", "Ethernet68", "Ethernet72", "Ethernet76", "Ethernet80", "Ethernet84", "Ethernet88", "Ethernet92", "Ethernet96", "Ethernet100", "Ethernet104", "Ethernet108", "Ethernet112", "Ethernet116", "Ethernet120", "Ethernet124"
+            ], 
+            "type": "MIRROR"
+        }
     }
-]
+}
 ```
-
 
 everfow_acl_table.json, ingress, spine->tor
 ```
-[
-    {
-        "ACL_TABLE:acl_table_mirror_ingress_spinein": {
-            "policy_desc" : "Everflow_ACL_table, Ingress, SPINE in",
-            "type" : "MIRROR",
-            "ports" : "Ethernet0, Ethernet4, Ethernet8, Ethernet12, Ethernet16, Ethernet20, Ethernet24, Ethernet28, Ethernet32, Ethernet36, Ethernet40, Ethernet44, Ethernet48, Ethernet52, Ethernet56, Ethernet60"
-        },
-        "OP": "SET"
+{
+    "ACL_TABLE": {
+        "SPINEIN": {
+            "policy_desc": "SPINE ports ingress", 
+            "ports": [
+                "Ethernet0", "Ethernet4", "Ethernet8", "Ethernet12" "Ethernet16", "Ethernet20", "Ethernet24", "Ethernet28", "Ethernet32", "Ethernet36", "Ethernet40", "Ethernet44", "Ethernet48", "Ethernet52", "Ethernet56", "Ethernet60"
+            ], 
+            "type": "MIRROR"
+        }
     }
-]
+}
 ```
 
 everfow_acl_table.json, egress, tor->spine
 ```
-[
-    {
-        "ACL_TABLE:acl_table_mirror_egress_spineout": {
-            "policy_desc" : "Everflow_ACL_table, Egress, SPINE out",
-            "type" : "MIRROR",
-            "ports" : "Ethernet0, Ethernet4, Ethernet8, Ethernet12, Ethernet16, Ethernet20, Ethernet24, Ethernet28, Ethernet32, Ethernet36, Ethernet40, Ethernet44, Ethernet48, Ethernet52, Ethernet56, Ethernet60",
-            "stage" : "EGRESS"
-        },
-        "OP": "SET"
+{
+    "ACL_TABLE": {
+        "SPINEOUT": {
+            "policy_desc": "SPINE ports egress", 
+            "ports": [
+                "Ethernet0", "Ethernet4", "Ethernet8", "Ethernet12" "Ethernet16", "Ethernet20", "Ethernet24", "Ethernet28", "Ethernet32", "Ethernet36", "Ethernet40", "Ethernet44", "Ethernet48", "Ethernet52", "Ethernet56", "Ethernet60"
+            ], 
+            "type": "MIRROR"
+        }
     }
-]
+}
 ```
 
 
 everfow_acl_table.json, egress, spine->tor
 ```
-[
-    {
-        "ACL_TABLE:acl_table_mirror_egress_torout": {
-            "policy_desc" : "Everflow_ACL_table, Egress, TOR out",
-            "type" : "MIRROR",
-            "ports" : "Ethernet64, Ethernet68, Ethernet72, Ethernet76, Ethernet80, Ethernet84, Ethernet88, Ethernet92, Ethernet96, Ethernet100, Ethernet104, Ethernet108, Ethernet112, Ethernet116, Ethernet120, Ethernet124, Ethernet128",
-            "stage" : "EGRESS"
-        },
-        "OP": "SET"
+{
+    "ACL_TABLE": {
+        "TOROUT": {
+            "policy_desc": "TOR ports egress", 
+            "ports": [
+                "Ethernet64", "Ethernet68", "Ethernet72", "Ethernet76", "Ethernet80", "Ethernet84", "Ethernet88", "Ethernet92", "Ethernet96", "Ethernet100", "Ethernet104", "Ethernet108", "Ethernet112", "Ethernet116", "Ethernet120", "Ethernet124"
+            ], 
+            "type": "MIRROR"
+        }
     }
-]
+}
 ```
 
-everflow_acl_rule_persistent.json
-For different test scenario, acl rule should be added for different ACL rule table. Below example is for the ingress tor->spine scenario.
-```
-[
-    {
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:Rule01": {
-            "policy_desc" : "Mirror_packet_with_tcp_flag_fin",
-            "priority" : "50",
-            "tcp_flags" : "0x01/0xff",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
-    {
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:Rule02": {
-            "policy_desc" : "Mirror_packet_with_tcp_flag_syn_and_dscp",
-            "priority" : "50",
-            "tcp_flags" : "0x02/0xff",
-			"dscp" : "1"
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
-    {
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:Rule03": {
-            "policy_desc" : "Mirror_packet_with_tcp_flag_rst",
-            "priority" : "50",
-            "tcp_flags" : "0x04/0xff",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
-    {
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:Rule04": {
-            "policy_desc" : "Mirror_packet_with_specific_tcp_port",
-            "priority" : "50",
-			"ip_protocol" : "0x06",
-            "l4_src_port" : "1101",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
+everflow_acl_rule.json
+For different test scenario, acl rule should be added for different ACL rule table. Below example is for the ingress tor->spine scenario, ACL table is TORIN. CLI command for loading this config: `acl-loader update full <acl_rule_configuration_json_file> --session_name=<mirror_session_name`.
 
-]
 ```
-
-everflow_acl_rule_dynamic.json
-For different test scenario, acl rule should be added for different ACL rule table. Below example is for the ingress tor->spine scenario.
-```
-[
-    {
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:RuleDynamic01": {
-            "policy_desc" : "Mirror_packet_with_specific_src_ip",
-            "priority" : "50",
-            "src_ip" : "10.0.0.0/32",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
-	{
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:RuleDynamic02": {
-            "policy_desc" : "Mirror_packet_with_specific_dst_ip",
-            "priority" : "50",
-            "dst_ip" : "10.0.0.5/32",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
-    },
-	{
-        "ACL_RULE_TABLE:acl_table_mirror_ingress_torin:RuleDynamic03": {
-            "policy_desc" : "Mirror_packet_with_specific_src_and_dst_ip",
-            "priority" : "50",
-            "src_ip" : "10.0.0.0/32",
-			"dst_ip" : "10.0.0.5/32",
-            "mirror_action" : "session_1"
-        },
-        "OP": "SET"
+{
+    "acl": {
+        "acl-sets": {
+            "acl-set": {
+                "TORIN": {
+                    "acl-entries": {
+                        "acl-entry": {
+                            "1": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 1
+                                },
+                                "ip": {
+                                    "config": {
+                                        "source-ip-address": "20.0.0.10/32"
+                                    }
+                                }
+                            },
+                            "2": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 2
+                                },
+                                "ip": {
+                                    "config": {
+                                        "destination-ip-address": "192.168.0.10/32"
+                                    }
+                                }
+                            },
+                            "3": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 3
+                                },
+                                "transport": {
+                                    "config": {
+                                        "source-port": "4661"
+                                    }
+                                }
+                            },
+                            "4": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 4
+                                },
+                                "transport": {
+                                    "config": {
+                                        "destination-port": "4661"
+                                    }
+                                }
+                            },
+                            "5": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 5
+                                },
+                                "l2": {
+                                    "config": {
+                                        "ethertype": "4660"
+                                    }
+                                }
+                            },
+                            "6": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 6
+                                },
+                                "ip": {
+                                    "config": {
+                                        "protocol": 126
+                                    }
+                                }
+                            },
+                            "7": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 7
+                                },
+                                "transport": {
+                                    "config": {
+                                        "tcp-flags": ["TCP_ACK", "TCP_SYN"]
+                                    }
+                                }
+                            },
+                            "8": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 8
+                                },
+                                "transport": {
+                                    "config": {
+                                        "source-port": "4672..4681"
+                                    }
+                                }
+                            },
+                            "9": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 9
+                                },
+                                "transport": {
+                                    "config": {
+                                        "destination-port": "4672..4681"
+                                    }
+                                }
+                            },
+                            "10": {
+                                "actions": {
+                                    "config": {
+                                        "forwarding-action": "ACCEPT"
+                                    }
+                                },
+                                "config": {
+                                    "sequence-id": 10
+                                },
+                                "ip": {
+                                    "config": {
+                                        "dscp": "51"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
-]
+}
 ```
 ## PTF Test
 
@@ -405,6 +590,6 @@ Verify that after removal of next hop that was used by session from ECMP route s
 ### Other possible tests
 
 ## TODO
-- Everflow+LAG test configuration and testcases (separate ansible tag)
+- Everflow+LAG test configuration and testcases (separate ansible playbook)
 
 ## Open Questions
