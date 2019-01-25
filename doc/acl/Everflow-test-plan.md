@@ -52,7 +52,7 @@ The test assumes all necessary configuration, including Everflow session and ACL
 
 ### Scope
 The test is targeting a running SONIC system with fully functioning configuration.
-The purpose of the test is not to test specific SAI API, but functional testing of Everflow on SONIC system, making sure that traffic flows correctly, according to BGP routes advertised by BGP peers of SONIC switch, and the LAG configuration.
+The purpose of the test is not to test specific SAI API, but functional testing of Everflow on SONiC system, making sure that traffic flows correctly, according to BGP routes advertised by BGP peers of SONIC switch, and the LAG configuration.
 
 NOTE: Everflow+LAG test will be able to run **only** in the testbed specifically created for LAG.
 
@@ -71,7 +71,7 @@ The existing everflow test plan only covers ingress ACL. And ingress everflow AC
 
 ### Extend the test plan to cover both ingress and egress ACL
 
-After egress ACL is supported, this test plan needs to cover both ingress and egress ACL. But for supporting swiches that do not support ingress yet, an ansible playbook variable is required for indicating egress ACL capability. Value for the variable can be passed from CLI.
+After egress ACL is supported, this test plan needs to cover both ingress and egress ACL. But for supporting swiches that do not support egress yet, an ansible playbook variable is required for indicating egress ACL capability. Value for the variable can be passed from CLI.
 
 To cover egress ACL everflow testing, the ACL tables should not be binded to all ports. And different ACL tables for ingress and egress ACL need to be tested. Based on this requirement, totally 4 ACL tables should be configured before testing:
 
@@ -440,7 +440,6 @@ Verify that session with resolved route has active state.
 
 - Create route that matches session destination IP with unresolved next hop.
 - Resolve route next hop.
-- Verify that session state in APP DB changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packet mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -457,7 +456,6 @@ Verify that session destination port and MAC address are changed after best matc
 
 - Create route that matches session destination IP with unresolved next hop.
 - Resolve route next hop.
-- Verify that session state in APP DB changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -466,7 +464,6 @@ Verify that session destination port and MAC address are changed after best matc
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets are mirrored to the same port.
 - Resolve best match route next hop (neighbor should be on different port).
-- Verify that session state in APP DB is active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets are mirrored and destination port changed accordingly.
 
@@ -480,7 +477,6 @@ Verify that session destination port and MAC address are changed after best matc
 
 - Create route that matches session destination IP with unresolved next hop.
 - Resolve route next hop.
-- Verify that session state in APP DB changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -503,7 +499,6 @@ Verify that session destination MAC address is changed after neighbor MAC addres
 
 - Create route that matches session destination IP with unresolved next hop.
 - Resolve route next hop.
-- Verify that session state in APP DB changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -522,7 +517,6 @@ Verify that session with resolved ECMP route has active state.
 
 - Create ECMP route that matches session destination IP with two unresolved next hops.
 - Resolve route next hops.
-- Verify that session state in APP DB is changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packets header.
@@ -538,7 +532,6 @@ Verify that insertion of additional next hop to ECMP group doesn't affects sessi
 
 - Create ECMP route that matches session destination IP with two unresolved next hops.
 - Resolve route next hops.
-- Verify that session state in APP DB is changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -558,7 +551,6 @@ Verify that removal of next hop that is not used by session doesn't cause DST po
 
 - Create ECMP route that matches session destination IP with two unresolved next hops.
 - Resolve route next hops.
-- Verify that session state in APP DB is changed to active.
 - Send packets that matches each Everflow rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -578,7 +570,6 @@ Verify that after removal of next hop that was used by session from ECMP route s
 
 - Create ECMP route that matches session destination IP with two unresolved next hops.
 - Resolve route next hops.
-- Verify that session state in APP DB is changed to active.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
@@ -590,6 +581,7 @@ Verify that after removal of next hop that was used by session from ECMP route s
 ### Other possible tests
 
 ## TODO
+- Everflow+VLAN test configuration and testcases (Add VLAN, move destination port in VLAN, test everflow; move destination port out of VLAN, test everflow)
 - Everflow+LAG test configuration and testcases (separate ansible playbook)
 
 ## Open Questions
