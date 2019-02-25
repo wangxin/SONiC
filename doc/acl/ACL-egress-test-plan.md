@@ -1,18 +1,20 @@
-## [DRAFT, UNDER DEVELOPMENT]
+# ACL Test Plan
 
-- [[DRAFT, UNDER DEVELOPMENT]](#draft-under-development)
-- [The existing test plan and scripts](#the-existing-test-plan-and-scripts)
-  - [Problems of existing ingress ACL testing](#problems-of-existing-ingress-acl-testing)
-- [Ingress & egress ACL testing strategy](#ingress--egress-acl-testing-strategy)
-  - [The testing strategy](#the-testing-strategy)
-  - [Work need to be done](#work-need-to-be-done)
-  - [ACL tables and ACL rules](#acl-tables-and-acl-rules)
-    - [The DATAINGRESS ACL table and its ruls](#the-dataingress-acl-table-and-its-ruls)
-    - [The DATAEGRESS ACL table and its ruls](#the-dataegress-acl-table-and-its-ruls)
-    - [Counters of ACL rules](#counters-of-acl-rules)
-  - [ACL tests](#acl-tests)
+- [ACL Test Plan](#acl-test-plan)
+  - [The existing test plan and scripts](#the-existing-test-plan-and-scripts)
+    - [Problems of existing ingress ACL testing](#problems-of-existing-ingress-acl-testing)
+  - [Ingress & egress ACL testing strategy](#ingress--egress-acl-testing-strategy)
+    - [The testing strategy](#the-testing-strategy)
+    - [Work need to be done](#work-need-to-be-done)
+    - [ACL tables and ACL rules](#acl-tables-and-acl-rules)
+      - [The DATAINGRESS ACL table and its ruls](#the-dataingress-acl-table-and-its-ruls)
+      - [The DATAEGRESS ACL table and its ruls](#the-dataegress-acl-table-and-its-ruls)
+      - [Counters of ACL rules](#counters-of-acl-rules)
+    - [ACL tests](#acl-tests)
 
 ## The existing test plan and scripts
+
+The existing test plan: https://github.com/Azure/SONiC/wiki/ACL-test-plan
 
 The existing acl test scripts covered ingress ACL on SONiC switch. Supported topo: t1, t1-lag, t1-64-lag
 
@@ -48,7 +50,6 @@ To verify that the ingress ACL rules are working, the PTF script send various pa
 * Most of the rules covered FORWARD action. Coverage of DROP action is not enough.
 * "aclshow -a" can show counters of ACL rules. Checking counters is not covered.
 * The packets intended for matching RULE_12 and RULE_13 are matched by RULE_1 firstly. RULE_12 and RULE_13 are never hit.
-* The ACL table is binded to all ports.
 * Logging of the PTF script needs improvement. If a case failed, failed case is not in ansible log. Need to check PTF log to find out exactly which case failed.
 
 ## Ingress & egress ACL testing strategy
