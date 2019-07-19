@@ -359,6 +359,23 @@ ACL Rule MIRROR_EGRESS_ACTION | [x] | [x]
 
 Totally there are 3 possible combinations. Not all the combinations are supported by all platforms. The actual combinations to be tested are determined the actual DUT platform.
 
+Switch's ACL capability can be queried from DB table `SWITCH_CAPABILITY|switch`. The testing script can query ACL capability first. And then run the supported combinations, skip the unsupported combinations.
+
+For example, if query SWITCH_CAPABILITY got below results:
+```
+$ redis-cli -n 6 hgetall "SWITCH_CAPABILITY|switch"
+1) "ACL_ACTIONS|INGRESS"
+2) "PACKET_ACTION,REDIRECT_ACTION,MIRROR_ACTION_INGRESS"
+3) "ACL_ACTIONS|EGRESS"
+4) "PACKET_ACTION,MIRROR_ACTION_EGRESS"
+...
+```
+Then the platform only supports two combinations:
+* ACL table stage ingress + ACL Rule MIRROR_INGRESS_ACTION
+* ACL table stage egress + ACL Rule MIRROR_EGRESS_ACTION
+
+The third combination would be skipped on this platform.
+
 ### Test configurations
 
 #### ACL table configurations
@@ -1008,7 +1025,7 @@ Each test case will add dynamic Everflow ACL rules at the beginning and remove t
 
 Each test case will run traffic for persistent and dynamic Everflow ACL rules.
 
-Each test case will analyze Everflow packet header and payload (if mirrored packet is equal to original).
+Each test case will analyze Everflow packet header and payload (if mirrored packet is equal to original). In case of egress mirroring, verify that TTL of the mirrored packet in GRE tunnel is decremented comparing with the injected packet.
 
 ### Test case \#1 - Resolved route
 
@@ -1023,6 +1040,7 @@ Verify that session with resolved route has active state.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packet mirrored to appropriate port.
 - Analyze mirrored packet header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packet payload is equal to sent packet.
 - Verify that counters value of each Everflow ACL rule is correct.
 
@@ -1039,6 +1057,7 @@ Verify that session destination port and MAC address are changed after best matc
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packet payload is equal to sent packet.
 - Create best match route that matches session destination IP with unresolved next hop.
 - Send packets that matches each Everflow ACL rule.
@@ -1060,6 +1079,7 @@ Verify that session destination port and MAC address are changed after best matc
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packet payload is equal to sent packet.
 - Create best match route that matches session destination IP with unresolved next hop.
 - Resolve best match route next hop (neighbor should be on different port).
@@ -1082,6 +1102,7 @@ Verify that session destination MAC address is changed after neighbor MAC addres
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packet payload is equal to sent packet.
 - Change neighbor MAC address.
 - Send packets that matches each Everflow ACL rule.
@@ -1100,6 +1121,7 @@ Verify that session with resolved ECMP route has active state.
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packets header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packets payload is equal to sent packet.
 
 ### Test case \#7 - ECMP route change (remove next hop not used by session).
@@ -1115,6 +1137,7 @@ Verify that after removal of next hop that was used by session from ECMP route s
 - Send packets that matches each Everflow ACL rule.
 - Verify that packets mirrored to appropriate port.
 - Analyze mirrored packet header.
+- In case of egress mirroring, verify that TTL of the mirrored packet is decremented comparing with the injected packet.
 - Verify that mirrored packets payload is equal to sent packets.
 - Remove next hop that is used by session.
 - Send packets that matches each Everflow ACL rule.
